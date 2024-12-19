@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Leaflet Map</title>
+    <link rel="stylesheet" href="leaflet/leaflet.css">
+    <style>
+        #mapid { height: 100vh; }
+        .custom-tooltip {
+            background: white;
+            border: 1px solid #666;
+            padding: 4px 8px;
+            font-size: 14px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+            background: white;
+            padding: 6px 8px;
+            border-radius: 4px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .legend-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="mapid"></div>
+    <script src="leaflet/leaflet.js"></script>
+    <script src="js/d3.v5.min.js"></script>
+    <script type="text/javascript">
+    // Create the map and set the initial view
+    var mymap = L.map('mapid').setView([37.72, -122.1], 11);
+
+    // Add a basemap
+    var CartoDB_Positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(mymap);
+
+    // Create color scale for the age proportion layer
+    var colorScale = d3.scaleSequential(d3.interpolateYlGnBu)
+                       .domain([0, 0.4]);
+
+    // Create and add legend
+    var legend = L.control({position: 'topright'});
+    
+    legend.onAdd = function (map) {
+        var div = L.DomUtil.create('div', 'legend');
+        var grades = [0, 0.1, 0.2, 0.3, 0.4];
+        
+        // Add legend title
+        div.innerHTML = '<div class="legend-title">65+ Population Proportion</div>';
+        
+        // Add colored boxes and labels
+        for (var i = 0; i < grades.length - 1; i++) {
+            div.innerHTML +=
+                '<i style="background:' + colorScale(grades[i]) + '"></i> ' +
+                (grades[i] * 100).toFixed(0) + '% &ndash; ' + 
+                (grades[i + 1] * 100).toFixed(0) + '%<br>';
+        }
+        
+        // Add point marker legend
+        div.innerHTML += '<div class="legend-title" style="margin-top: 10px;">Vote Centers</div>' +
+                        '<i style="background: #c08f77; border-radius: 50%;"></i>Location<br>';
+        
+        return div;
+    };
+    legend.addTo(mymap);
+
+    // Create a LayerGroup for GeoJSON (color layer)
+    var geojsonLayer = L.layerGroup();
+
+    // Create a LayerGroup for precinct points
+    var pointsLayer = L.layerGroup();
+
+    // Load GeoJSON data for age proportion layer
+    fetch('age_pro.geojson')
+        .then(response => response.json())
+        .then(function(geojsonData) {
+            L.geoJSON(geojsonData, {
+                style: function(feature) {
+                    var proportion = feature.properties['acs2022_5yr_65_proportion'] || 0;
+                    return {
+                        color: '#ffffff',
+                        weight: 1,
+                        opacity: 0.5,
+                        fillColor: colorScale(proportion),
+                        fillOpacity: 0.5
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    var proportion = feature.properties['acs2022_5yr_65_proportion'] || 0;
+                    var content = "<p>65+ proportion: " + (proportion * 100).toFixed(2) + "%</p>";
+                    
+                    // Add tooltip for mouseover
+                    layer.bindTooltip(content, {
+                        permanent: false,
+                        direction: 'top',
+                        className: 'custom-tooltip'
+                    });
+                    
+                    // Keep existing popup for click
+                    // layer.bindPopup(content);
+                }
+            }).addTo(geojsonLayer);
+            
+            // Add the GeoJSON layer first
+            geojsonLayer.addTo(mymap);
+            
+            // Load CSV data for precinct markers after GeoJSON is loaded
+            d3.csv("precincts_data_geocoded.csv").then(function(data) {
+                data.forEach(function(d) {
+                    var marker = L.circleMarker([+d["Latitude"], +d["Longitude"]], {
+                        radius: 4.5,
+                        color: "white",
+                        fillColor: "#c08f77",
+                        fillOpacity: 1
+                    });
+
+                    var content = "<p>" + d["Location"] + "</p>";
+                    
+                    // Add tooltip for mouseover
+                    marker.bindTooltip(content, {
+                        permanent: false,
+                        direction: 'top',
+                        className: 'custom-tooltip'
+                    });
+                    
+                    // Keep existing popup for click
+                    // marker.bindPopup(content);
+                    
+                    marker.addTo(pointsLayer);
+                });
+                
+                // Add the points layer last to ensure it's on top
+                pointsLayer.addTo(mymap);
+                pointsLayer.bringToFront();
+            });
+        });
+    </script>
+</body>
+</html>
